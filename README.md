@@ -11,6 +11,7 @@ A full-stack financial trading platform with real-time market data, portfolio ma
   - [Prerequisites](#backend-prerequisites)
   - [Configuration](#backend-configuration)
   - [Running the Backend](#running-the-backend)
+  - [Docker (Backend)](#docker-backend)
   - [API Documentation](#api-documentation)
   - [Database Entities](#database-entities)
   - [Security](#security)
@@ -18,6 +19,7 @@ A full-stack financial trading platform with real-time market data, portfolio ma
   - [Prerequisites](#frontend-prerequisites)
   - [Configuration](#frontend-configuration)
   - [Running the Frontend](#running-the-frontend)
+  - [Docker (Frontend)](#docker-frontend)
   - [Pages & Features](#pages--features)
   - [Authentication & Authorization](#authentication--authorization)
 - [Getting Started](#getting-started)
@@ -136,8 +138,10 @@ FTP/v1/
 │   │       ├── UserService.java
 │   │       ├── DashboardStatsService.java
 │   │       ├── TransactionService.java
-│   │       └── impl/
-│   │           ├── [Service Implementations]
+│   │           └── impl/
+│   │           │   └── [Service Implementations]
+│   ├── src/main/resources/application.properties
+│   └── Dockerfile
 ├── frontend/
 │   ├── src/
 │   │   ├── main.jsx
@@ -173,6 +177,8 @@ FTP/v1/
 │   │   └── assets/
 │   ├── package.json
 │   ├── vite.config.js
+│   ├── Dockerfile
+│   ├── nginx.conf
 │   └── index.html
 ├── backend/pom.xml
 └── frontend/package.json
@@ -234,6 +240,39 @@ java -jar target/trading-platform-0.0.1-SNAPSHOT.jar
 ```
 
 The API will be available at `http://localhost:8080/api`.
+
+### Docker (Backend)
+
+Multi-stage Dockerfile located at `backend/Dockerfile`:
+
+```dockerfile
+FROM eclipse-temurin:17-jdk AS builder
+WORKDIR /app
+COPY pom.xml .
+COPY .mvn .mvn
+COPY src src
+RUN ./mvnw clean package -DskipTests
+
+FROM eclipse-temurin:17-jre-slim
+WORKDIR /app
+COPY --from=builder /app/target/trading-platform-0.0.1-SNAPSHOT.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
+
+Build the backend image:
+```bash
+docker build -t trading-platform-backend ./backend
+```
+
+Run the backend container:
+```bash
+docker run -p 8080:8080 \
+  -e SPRING_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:5432/trading_platform \
+  -e SPRING_DATASOURCE_USERNAME=postgres \
+  -e SPRING_DATASOURCE_PASSWORD=mysecretpassword \
+  trading-platform-backend
+```
 
 ### API Documentation
 
@@ -381,6 +420,41 @@ The application will be available at `http://localhost:3000`.
 Build for production:
 ```bash
 npm run build
+```
+
+### Docker (Frontend)
+
+Multi-stage Dockerfile located at `frontend/Dockerfile`:
+
+```dockerfile
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+Nginx configuration at `frontend/nginx.conf`:
+- Serves the React SPA with SPA routing support (`try_files`)
+- Proxies `/api` requests to the backend at `http://localhost:8080`
+
+Build the frontend image:
+```bash
+docker build -t trading-platform-frontend ./frontend
+```
+
+Run the frontend container:
+```bash
+docker run -p 80:80 \
+  -e VITE_API_URL=http://localhost:8080/api \
+  trading-platform-frontend
 ```
 
 ### Pages & Features
